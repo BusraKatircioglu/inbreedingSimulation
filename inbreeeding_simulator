@@ -1,0 +1,310 @@
+from collections import Counter
+from enum import Enum
+import pandas as pd
+import numpy as np
+import argparse
+import random
+# import psutil
+import time
+import csv
+
+class PoolType(Enum):
+    father_mother = 1
+    father_ca = 2
+    mother_ca= 3
+    within_ca= 4
+
+def setLimit(max_mean, total_ind):
+    limits = {}
+    for elem in range(1,total_ind+1):
+        limits[elem]= np.random.poisson(max_mean)
+
+    return limits
+
+def checkToLimitAddToList(parent_occurrences, new_generation, parent1_idx, parent2_idx, num_children, founder_male, founder_female, limit_dic):
+    parent_key1 = parent1_idx
+    parent_key2 = parent2_idx
+    max1= limit_dic.get(parent_key1)
+    max2= limit_dic.get(parent_key2)
+    if parent_occurrences.get(parent_key1, 0)+num_children < max1 and parent_occurrences.get(parent_key2, 0) + num_children < max2 :
+        parent_occurrences[parent_key1] = parent_occurrences.get(parent_key1, 0) + num_children
+        parent_occurrences[parent_key2] = parent_occurrences.get(parent_key2, 0) + num_children
+        if parent_occurrences[parent_key1] > max1:
+            founder_male.remove(parent_key1)
+        if parent_occurrences[parent_key2] > max2: 
+            founder_female.remove(parent_key2)
+
+        offspring = [f"{parent1_idx}-{parent2_idx}" for _ in range(num_children)]
+        new_generation.extend(offspring)
+    
+
+def createFounders(male_number, start):
+    founder_male = [i for i in range(1+start, male_number+1+start)]
+    return founder_male
+
+def simulatePopulation(male_number, female_number, num_generations, seed, mean_children_per_couple, max_child_mean, rep):
+    np.random.seed(seed)
+    pop_size = female_number + male_number
+    pop_sim_matrix = np.empty((1, pop_size), dtype=object)    
+
+    for generation in range(num_generations):
+        new_generation = []
+        founder_male = createFounders(male_number,0)
+        founder_female = createFounders(female_number, male_number)
+        parent_occurrences = {}  # Dictionary to store parent indexes and their occurrences
+        limit_dic = setLimit(max_child_mean, male_number+female_number)
+
+        while len(new_generation) < pop_size:
+            isSibling= (1,2)
+            if generation == 0: 
+                parent1_idx = np.random.choice(founder_male)
+                parent2_idx = np.random.choice(founder_female)
+            elif generation > 0:
+                while len(isSibling) != 0:
+                    parent1_idx = np.random.choice(founder_male)
+                    parent2_idx = np.random.choice(founder_female)
+                    isSibling = set((pop_sim_matrix[generation-1][parent1_idx-1]).split("-")) & set((pop_sim_matrix[generation-1][parent2_idx-1]).split("-"))
+                # Use Poisson distribution to determine the number of children for this couple
+            num_children = np.random.poisson(mean_children_per_couple)
+            # print("b", len(isSibling))
+            checkToLimitAddToList(parent_occurrences, new_generation, parent1_idx, parent2_idx, num_children, founder_male, founder_female, limit_dic)     # Add offspring codes to the new_generation list
+        new_generation = random.sample(new_generation, pop_size)
+        if generation==0:
+            pop_sim_matrix[0]=new_generation
+        else:
+            pop_sim_matrix = np.vstack((pop_sim_matrix, new_generation))
+
+        # dict = {}
+        # for i in range(1, female_number+male_number+1):
+        #     dict[i]=0
+        # for elem in new_generation:
+        #     a, b = elem.split("-")
+        #     dict[int(a)]+=1
+        #     dict[int(b)]+=1      
+
+        # with open('gen{}'.format(generation), 'w', newline='') as csvfile:
+        #     writer = csv.writer(csvfile)
+        #     # Write the header
+        #     writer.writerow(["Individual", "OffspringNumber"])
+        #     # Write the data
+        #     for key, value in dict.items():
+        #         writer.writerow([key, value])
+
+    col_names = [f"i{i+1}" for i in range(pop_sim_matrix.shape[1])]
+    row_names = [f"g{i+1}" for i in range(pop_sim_matrix.shape[0])]
+
+    # Convert to a Pandas DataFrame
+    df = pd.DataFrame(pop_sim_matrix, index=row_names, columns=col_names)
+    df.to_csv("pedigree_{}f_{}m_{}g_{}".format(female_number, male_number, num_generations,rep), sep='\t')
+    return df
+
+
+def getParents(dataframe, generation, individual_index):
+    parents = dataframe.loc[f"g{generation}", f"i{individual_index}"].split("-")
+    father_index, mother_index = map(int, parents)
+    return father_index, mother_index
+
+def traceBack(dataframe, current_generation, ancestors_by_generation_father):
+    ancestors_by_generation_father_new= []
+    for i in (ancestors_by_generation_father): 
+        parent1_index= i
+        father_lineage_parent1_index, father_lineage_parent2_index =getParents(dataframe, current_generation, parent1_index)
+        ancestors_by_generation_father_new.append(father_lineage_parent1_index)
+        ancestors_by_generation_father_new.append(father_lineage_parent2_index)
+    ancestors_by_generation_father = ancestors_by_generation_father_new
+    return ancestors_by_generation_father
+
+def countLoops(ancestors_by_generation_father, ancestors_by_generation_mother):
+    occurrences_dict = {}
+    common_ancestors= set(ancestors_by_generation_mother) & set(ancestors_by_generation_father)
+    for ancestor in common_ancestors:
+        occurrences_in_mother = ancestors_by_generation_mother.count(ancestor)
+        occurrences_in_father = ancestors_by_generation_father.count(ancestor)
+        occurrences_dict[ancestor] = occurrences_in_mother * occurrences_in_father
+    return occurrences_dict
+
+def countNonUniqueElements(ancestors_by_generation_ca):
+    count=Counter(ancestors_by_generation_ca)
+    non_unique_dict = {item: count_item for item, count_item in count.items() if count_item > 1}
+    return non_unique_dict
+
+def findCommonAncestor(dataframe, generation, parent1_index, parent2_index):
+
+    #Start tracing back from the specified individual in the specified generation
+    if generation < 1:
+        return
+    current_generation= generation-1
+
+    ancestors_by_generation_father = getParents(dataframe, current_generation, parent1_index)
+    ancestors_by_generation_mother = getParents(dataframe, current_generation, parent2_index)
+    common_ancestors= set(ancestors_by_generation_mother) & set(ancestors_by_generation_father)
+    ngen=2
+
+    while len(common_ancestors) == 0  : #and current_generation < num_gens
+        if(current_generation == 1):
+            break 
+        current_generation-=1
+        # trace back for one generation
+        ancestors_by_generation_father = traceBack(dataframe, current_generation, ancestors_by_generation_father) 
+        ancestors_by_generation_mother = traceBack(dataframe, current_generation, ancestors_by_generation_mother)
+        common_ancestors= set(ancestors_by_generation_mother) & set(ancestors_by_generation_father)
+
+        ngen+=1
+    
+    occurrences_dict = countLoops(ancestors_by_generation_father, ancestors_by_generation_mother)
+    return occurrences_dict, ngen, list(ancestors_by_generation_father), list(ancestors_by_generation_mother)
+
+
+def calculate(simulated_data, generation, occurrences_dict, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, pooltype, num_gens, memo):
+    if generation < 0: 
+        return total
+    if(len(occurrences_dict))==0:
+        return total
+    father_index = None  # Initialize father_index and mother_index outside of the if statement
+    mother_index = None
+    for elem in occurrences_dict.keys():
+        if generation-ngen >= 1:
+            father_index, mother_index = getParents(simulated_data, generation-ngen, elem)
+        nloops = occurrences_dict[elem]
+        nedges= 2*ngen
+        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, father_index, mother_index, num_gens, memo)))
+        if pooltype == PoolType.father_mother:
+            if elem not in ancestors_by_generation_ca:
+                ancestors_by_generation_ca.append(elem)
+            while elem in ancestors_by_generation_father:
+                ancestors_by_generation_father.remove(elem)
+            while elem in ancestors_by_generation_mother:
+                ancestors_by_generation_mother.remove(elem)
+        elif pooltype == PoolType.father_ca:
+            while elem in ancestors_by_generation_father:
+                ancestors_by_generation_father.remove(elem)
+        elif pooltype == PoolType.mother_ca:
+            while elem in ancestors_by_generation_mother:
+                ancestors_by_generation_mother.remove(elem)
+    return total
+
+
+def calculateInbreedingCoefficient(simulated_data, generation , father_index, mother_index, num_gens, memo):
+    max_attempt = 15
+    if generation <= 1: 
+        return 0
+    
+    if (generation, father_index, mother_index) in memo:
+        return memo[(generation, father_index, mother_index)]
+
+    occurrences_dict, ngen, ancestors_by_generation_father, ancestors_by_generation_mother =findCommonAncestor(simulated_data, generation, father_index, mother_index)
+    if(len(occurrences_dict))==0:
+        return 0
+    
+    total=0
+    ancestors_by_generation_ca = []
+    for elem in occurrences_dict.keys():
+
+        if generation-ngen >= 1:
+            father_index, mother_index = getParents(simulated_data, generation-ngen, elem)
+
+        nloops = occurrences_dict[elem]
+        nedges= 2*ngen
+        ancestors_by_generation_ca.append(elem)
+        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, father_index, mother_index, num_gens, memo)))
+        while elem in ancestors_by_generation_father:
+            ancestors_by_generation_father.remove(elem)
+        while elem in ancestors_by_generation_mother:
+            ancestors_by_generation_mother.remove(elem)
+    while (len(ancestors_by_generation_father)!=0 or len(ancestors_by_generation_mother)!=0) and generation-ngen > 0  and generation > num_gens - 15: 
+        common_ancestors=[]
+        attempts=0
+
+        while len(common_ancestors) == 0 and attempts < max_attempt and generation-ngen >= num_gens-15:
+            if(generation-ngen < 1):
+                 break 
+            # trace back for one generation
+            
+            ancestors_by_generation_father = traceBack(simulated_data, generation-ngen, ancestors_by_generation_father) 
+            ancestors_by_generation_mother = traceBack(simulated_data, generation-ngen, ancestors_by_generation_mother)
+            ancestors_by_generation_ca = traceBack(simulated_data, generation-ngen, ancestors_by_generation_ca)
+            common_ancestors = list(set(ancestors_by_generation_mother) & set(ancestors_by_generation_father))
+            common_ancestors.extend(list(set(ancestors_by_generation_ca) & set(ancestors_by_generation_father)))
+            common_ancestors.extend(list(set(ancestors_by_generation_ca) & set(ancestors_by_generation_mother)))
+     
+            ngen+=1
+            attempts+=1
+            
+        if attempts >= max_attempt or generation-ngen == 0 :
+            break
+        if generation-ngen < num_gens- 15:
+            # loss.append({"gen": generation, "ngen": ngen, "pool_mother" : len(ancestors_by_generation_mother), "pool_father": len(ancestors_by_generation_father), "pool_ca": len(ancestors_by_generation_ca)})
+            break
+        # Call countLoops function for each set of ancestors and merge the results 
+
+        occurrences_dict_ca_within = countNonUniqueElements(ancestors_by_generation_ca)
+        ancestors_by_generation_ca=list(set(ancestors_by_generation_ca))
+        occurrences_dict_father_mother = countLoops(ancestors_by_generation_father, ancestors_by_generation_mother)
+        occurrences_dict_ca_father = countLoops(ancestors_by_generation_ca, ancestors_by_generation_father)
+        occurrences_dict_ca_mother = countLoops(ancestors_by_generation_ca, ancestors_by_generation_mother)
+
+
+        total = calculate(simulated_data, generation, occurrences_dict_father_mother, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.father_mother, num_gens, memo)
+        total = calculate(simulated_data, generation, occurrences_dict_ca_father, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.father_ca, num_gens, memo)
+        total = calculate(simulated_data, generation, occurrences_dict_ca_mother, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.mother_ca, num_gens, memo)
+        total = calculate(simulated_data, generation, occurrences_dict_ca_within, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.within_ca, num_gens, memo)
+
+    memo[(generation, father_index, mother_index)] = total    
+    return total
+
+
+##main
+def main(args):
+
+    num_gens = args.num_gens
+    female = args.female
+    male = args.male
+    rep_range= args.rep
+    max_child_mean= 7
+    seed = 17
+    mean_children_per_couple = 2  # Adjust this mean as needed
+    total_ind= female + male 
+
+    for rep in range(1, int(rep_range)+1):
+        memo = {}
+        loss = []
+        Fped_list = []
+        simulated_data = simulatePopulation(male, female, num_gens, seed, mean_children_per_couple, max_child_mean, rep)
+
+        start1 = time.time()
+        for i in range(1, total_ind+1):
+            father_index, mother_index = getParents(simulated_data, num_gens, i)
+            start = time.time()
+            fped = calculateInbreedingCoefficient(simulated_data,num_gens,father_index,mother_index, num_gens, memo)
+            
+            Fped_list.append(fped)
+            end = time.time()
+            print("1 person: ",end - start)
+            print("writing...")
+        end1 = time.time()
+        print("all person: ",end1 - start1)
+
+        # Getting % usage of virtual_memory ( 3rd field)
+        # print('RAM memory % used:', psutil.virtual_memory()[2])
+        # Getting usage of virtual_memory in GB ( 4th field)
+        # print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
+        with open('female{}_male{}_gen{}_{}.txt'.format(female, male, num_gens, rep), 'w') as f:
+            # Iterate over the list and write each item to the file
+            for item in Fped_list:
+                f.write(str(item) + '\n')
+        field_names = ['gen', 'ngen', 'pool_mother', 'pool_father', 'pool_ca'] 
+        # with open('pools.csv', 'w') as csvfile: 
+        #     writer = csv.DictWriter(csvfile, fieldnames = field_names) 
+        #     writer.writeheader() 
+        #     writer.writerows(loss) 
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Pedigre Simulation and Inbreeding Coefficient Calculation")
+    parser.add_argument("female", type=int, help="female number")
+    parser.add_argument("male", type=int, help="male number")
+    parser.add_argument("num_gens",type= int, help="Number of generations")
+    parser.add_argument("rep",type=str, help="replica number")
+    args = parser.parse_args()
+    
+    main(args)
