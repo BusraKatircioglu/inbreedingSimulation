@@ -4,8 +4,6 @@ import pandas as pd
 import numpy as np
 import argparse
 import random
-# import psutil
-import time
 import csv
 
 class PoolType(Enum):
@@ -66,29 +64,12 @@ def simulatePopulation(male_number, female_number, num_generations, seed, mean_c
                     isSibling = set((pop_sim_matrix[generation-1][parent1_idx-1]).split("-")) & set((pop_sim_matrix[generation-1][parent2_idx-1]).split("-"))
                 # Use Poisson distribution to determine the number of children for this couple
             num_children = np.random.poisson(mean_children_per_couple)
-            # print("b", len(isSibling))
             checkToLimitAddToList(parent_occurrences, new_generation, parent1_idx, parent2_idx, num_children, founder_male, founder_female, limit_dic)     # Add offspring codes to the new_generation list
         new_generation = random.sample(new_generation, pop_size)
         if generation==0:
             pop_sim_matrix[0]=new_generation
         else:
             pop_sim_matrix = np.vstack((pop_sim_matrix, new_generation))
-
-        # dict = {}
-        # for i in range(1, female_number+male_number+1):
-        #     dict[i]=0
-        # for elem in new_generation:
-        #     a, b = elem.split("-")
-        #     dict[int(a)]+=1
-        #     dict[int(b)]+=1      
-
-        # with open('gen{}'.format(generation), 'w', newline='') as csvfile:
-        #     writer = csv.writer(csvfile)
-        #     # Write the header
-        #     writer.writerow(["Individual", "OffspringNumber"])
-        #     # Write the data
-        #     for key, value in dict.items():
-        #         writer.writerow([key, value])
 
     col_names = [f"i{i+1}" for i in range(pop_sim_matrix.shape[1])]
     row_names = [f"g{i+1}" for i in range(pop_sim_matrix.shape[0])]
@@ -233,9 +214,7 @@ def calculateInbreedingCoefficient(simulated_data, generation , father_index, mo
         if attempts >= max_attempt or generation-ngen == 0 :
             break
         if generation-ngen < num_gens- 15:
-            # loss.append({"gen": generation, "ngen": ngen, "pool_mother" : len(ancestors_by_generation_mother), "pool_father": len(ancestors_by_generation_father), "pool_ca": len(ancestors_by_generation_ca)})
             break
-        # Call countLoops function for each set of ancestors and merge the results 
 
         occurrences_dict_ca_within = countNonUniqueElements(ancestors_by_generation_ca)
         ancestors_by_generation_ca=list(set(ancestors_by_generation_ca))
@@ -271,32 +250,15 @@ def main(args):
         Fped_list = []
         simulated_data = simulatePopulation(male, female, num_gens, seed, mean_children_per_couple, max_child_mean, rep)
 
-        start1 = time.time()
         for i in range(1, total_ind+1):
             father_index, mother_index = getParents(simulated_data, num_gens, i)
-            start = time.time()
             fped = calculateInbreedingCoefficient(simulated_data,num_gens,father_index,mother_index, num_gens, memo)
-            
             Fped_list.append(fped)
-            end = time.time()
-            print("1 person: ",end - start)
-            print("writing...")
-        end1 = time.time()
-        print("all person: ",end1 - start1)
 
-        # Getting % usage of virtual_memory ( 3rd field)
-        # print('RAM memory % used:', psutil.virtual_memory()[2])
-        # Getting usage of virtual_memory in GB ( 4th field)
-        # print('RAM Used (GB):', psutil.virtual_memory()[3]/1000000000)
         with open('female{}_male{}_gen{}_{}.txt'.format(female, male, num_gens, rep), 'w') as f:
-            # Iterate over the list and write each item to the file
             for item in Fped_list:
                 f.write(str(item) + '\n')
-        field_names = ['gen', 'ngen', 'pool_mother', 'pool_father', 'pool_ca'] 
-        # with open('pools.csv', 'w') as csvfile: 
-        #     writer = csv.DictWriter(csvfile, fieldnames = field_names) 
-        #     writer.writeheader() 
-        #     writer.writerows(loss) 
+
 
 
 if __name__ == "__main__":
