@@ -34,7 +34,7 @@ def checkToLimitAddToList(parent_occurrences, new_generation, parent1_idx, paren
 
         offspring = [f"{parent1_idx}-{parent2_idx}" for _ in range(num_children)]
         new_generation.extend(offspring)
-    
+
 
 def createFounders(male_number, start):
     founder_male = [i for i in range(1+start, male_number+1+start)]
@@ -131,7 +131,7 @@ def findCommonAncestor(dataframe, generation, parent1_index, parent2_index):
         common_ancestors= set(ancestors_by_generation_mother) & set(ancestors_by_generation_father)
 
         ngen+=1
-    
+
     occurrences_dict = countLoops(ancestors_by_generation_father, ancestors_by_generation_mother)
     return occurrences_dict, ngen, list(ancestors_by_generation_father), list(ancestors_by_generation_mother)
 
@@ -141,14 +141,11 @@ def calculate(simulated_data, generation, occurrences_dict, ngen, ancestors_by_g
         return total
     if(len(occurrences_dict))==0:
         return total
-    father_index = None  # Initialize father_index and mother_index outside of the if statement
-    mother_index = None
+    
     for elem in occurrences_dict.keys():
-        if generation-ngen >= 1:
-            father_index, mother_index = getParents(simulated_data, generation-ngen, elem)
         nloops = occurrences_dict[elem]
         nedges= 2*ngen
-        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, father_index, mother_index, num_gens, memo)))
+        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, elem, num_gens, memo)))
         if pooltype == PoolType.father_mother:
             if elem not in ancestors_by_generation_ca:
                 ancestors_by_generation_ca.append(elem)
@@ -165,29 +162,26 @@ def calculate(simulated_data, generation, occurrences_dict, ngen, ancestors_by_g
     return total
 
 
-def calculateInbreedingCoefficient(simulated_data, generation , father_index, mother_index, num_gens, memo):
+def calculateInbreedingCoefficient(simulated_data, generation, individual_index, num_gens, memo):
     max_attempt = 15
     if generation <= 1: 
         return 0
-    
-    if (generation, father_index, mother_index) in memo:
-        return memo[(generation, father_index, mother_index)]
 
+    if (generation, individual_index) in memo:
+        return memo[(generation, individual_index)]
+    
+    father_index, mother_index = getParents(simulated_data, generation, individual_index)
     occurrences_dict, ngen, ancestors_by_generation_father, ancestors_by_generation_mother =findCommonAncestor(simulated_data, generation, father_index, mother_index)
     if(len(occurrences_dict))==0:
         return 0
-    
     total=0
     ancestors_by_generation_ca = []
     for elem in occurrences_dict.keys():
 
-        if generation-ngen >= 1:
-            father_index, mother_index = getParents(simulated_data, generation-ngen, elem)
-
         nloops = occurrences_dict[elem]
         nedges= 2*ngen
         ancestors_by_generation_ca.append(elem)
-        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, father_index, mother_index, num_gens, memo)))
+        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, elem, num_gens, memo)))
         while elem in ancestors_by_generation_father:
             ancestors_by_generation_father.remove(elem)
         while elem in ancestors_by_generation_mother:
@@ -200,17 +194,17 @@ def calculateInbreedingCoefficient(simulated_data, generation , father_index, mo
             if(generation-ngen < 1):
                  break 
             # trace back for one generation
-            
+
             ancestors_by_generation_father = traceBack(simulated_data, generation-ngen, ancestors_by_generation_father) 
             ancestors_by_generation_mother = traceBack(simulated_data, generation-ngen, ancestors_by_generation_mother)
             ancestors_by_generation_ca = traceBack(simulated_data, generation-ngen, ancestors_by_generation_ca)
             common_ancestors = list(set(ancestors_by_generation_mother) & set(ancestors_by_generation_father))
             common_ancestors.extend(list(set(ancestors_by_generation_ca) & set(ancestors_by_generation_father)))
             common_ancestors.extend(list(set(ancestors_by_generation_ca) & set(ancestors_by_generation_mother)))
-     
+
             ngen+=1
             attempts+=1
-            
+
         if attempts >= max_attempt or generation-ngen == 0 :
             break
         if generation-ngen < num_gens- 15:
@@ -251,8 +245,7 @@ def main(args):
         simulated_data = simulatePopulation(male, female, num_gens, seed, mean_children_per_couple, max_child_mean, rep)
 
         for i in range(1, total_ind+1):
-            father_index, mother_index = getParents(simulated_data, num_gens, i)
-            fped = calculateInbreedingCoefficient(simulated_data,num_gens,father_index,mother_index, num_gens, memo)
+            fped = calculateInbreedingCoefficient(simulated_data,num_gens, i, num_gens, memo)
             Fped_list.append(fped)
 
         with open('female{}_male{}_gen{}_{}.txt'.format(female, male, num_gens, rep), 'w') as f:
@@ -268,5 +261,5 @@ if __name__ == "__main__":
     parser.add_argument("num_gens",type= int, help="Number of generations")
     parser.add_argument("rep",type=str, help="replica number")
     args = parser.parse_args()
-    
+
     main(args)
