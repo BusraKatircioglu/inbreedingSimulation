@@ -13,7 +13,7 @@ This repository contains a Python script for simulating pedigrees and calculatin
 ## Usage
 Run the script using command-line arguments:
 ```bash
-python3 inbreedingSimulation.py <female> <male> <num_gens> <rep> <migration_rate> [--max_child_mean <value>] [--mean_child_per_couple <value>]
+python3 inbreedingSimulator.py <female> <male> <num_gens> <rep> <migration_rate> [--max_child_mean <value>] [--mean_child_per_couple <value>]
 ```
 
 - `<female>` : Number of females in the initial population.
