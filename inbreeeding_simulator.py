@@ -104,13 +104,14 @@ def getParents(dataframe, generation, individual_index):
     father_index, mother_index = map(int, parents)
     return father_index, mother_index
 
-def traceBack(dataframe, current_generation, ancestors_by_generation_father):
+def traceBack(dataframe, current_generation, ancestors_by_generation_father, total_ind):
     ancestors_by_generation_father_new= []
     for i in (ancestors_by_generation_father): 
         parent1_index= i
-        father_lineage_parent1_index, father_lineage_parent2_index =getParents(dataframe, current_generation, parent1_index)
-        ancestors_by_generation_father_new.append(father_lineage_parent1_index)
-        ancestors_by_generation_father_new.append(father_lineage_parent2_index)
+        if parent1_index <= total_ind:
+            father_lineage_parent1_index, father_lineage_parent2_index =getParents(dataframe, current_generation, parent1_index)
+            ancestors_by_generation_father_new.append(father_lineage_parent1_index)
+            ancestors_by_generation_father_new.append(father_lineage_parent2_index)
     ancestors_by_generation_father = ancestors_by_generation_father_new
     return ancestors_by_generation_father
 
@@ -145,8 +146,8 @@ def findCommonAncestor(dataframe, generation, parent1_index, parent2_index, tota
             break 
         current_generation-=1
         # trace back for one generation
-        ancestors_by_generation_father = traceBack(dataframe, current_generation, ancestors_by_generation_father) 
-        ancestors_by_generation_mother = traceBack(dataframe, current_generation, ancestors_by_generation_mother)
+        ancestors_by_generation_father = traceBack(dataframe, current_generation, ancestors_by_generation_father, total_ind) 
+        ancestors_by_generation_mother = traceBack(dataframe, current_generation, ancestors_by_generation_mother, total_ind)
         common_ancestors= set(ancestors_by_generation_mother) & set(ancestors_by_generation_father)
 
         ngen+=1
@@ -155,7 +156,7 @@ def findCommonAncestor(dataframe, generation, parent1_index, parent2_index, tota
     return occurrences_dict, ngen, list(ancestors_by_generation_father), list(ancestors_by_generation_mother)
 
 
-def calculate(simulated_data, generation, occurrences_dict, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, pooltype, num_gens, memo):
+def calculate(simulated_data, generation, occurrences_dict, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, pooltype, num_gens, memo, total_ind):
     if generation < 0: 
         return total
     if(len(occurrences_dict))==0:
@@ -164,7 +165,7 @@ def calculate(simulated_data, generation, occurrences_dict, ngen, ancestors_by_g
     for elem in occurrences_dict.keys():
         nloops = occurrences_dict[elem]
         nedges= 2*ngen            
-        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, elem, num_gens, memo)))
+        total += nloops* (((1/2)**(nedges-1))*(1+ calculateInbreedingCoefficient(simulated_data, generation-ngen, elem, num_gens, memo, total_ind)))
         if pooltype == PoolType.father_mother:
             if elem not in ancestors_by_generation_ca:
                 ancestors_by_generation_ca.append(elem)
@@ -220,9 +221,9 @@ def calculateInbreedingCoefficient(simulated_data, generation, individual_index,
                  break 
             # trace back for one generation
 
-            ancestors_by_generation_father = traceBack(simulated_data, generation-ngen, ancestors_by_generation_father) 
-            ancestors_by_generation_mother = traceBack(simulated_data, generation-ngen, ancestors_by_generation_mother)
-            ancestors_by_generation_ca = traceBack(simulated_data, generation-ngen, ancestors_by_generation_ca)
+            ancestors_by_generation_father = traceBack(simulated_data, generation-ngen, ancestors_by_generation_father, total_ind) 
+            ancestors_by_generation_mother = traceBack(simulated_data, generation-ngen, ancestors_by_generation_mother, total_ind)
+            ancestors_by_generation_ca = traceBack(simulated_data, generation-ngen, ancestors_by_generation_ca, total_ind)
             common_ancestors = list(set(ancestors_by_generation_mother) & set(ancestors_by_generation_father))
             common_ancestors.extend(list(set(ancestors_by_generation_ca) & set(ancestors_by_generation_father)))
             common_ancestors.extend(list(set(ancestors_by_generation_ca) & set(ancestors_by_generation_mother)))
@@ -242,10 +243,10 @@ def calculateInbreedingCoefficient(simulated_data, generation, individual_index,
         occurrences_dict_ca_mother = countLoops(ancestors_by_generation_ca, ancestors_by_generation_mother)
 
 
-        total = calculate(simulated_data, generation, occurrences_dict_father_mother, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.father_mother, num_gens, memo)
-        total = calculate(simulated_data, generation, occurrences_dict_ca_father, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.father_ca, num_gens, memo)
-        total = calculate(simulated_data, generation, occurrences_dict_ca_mother, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.mother_ca, num_gens, memo)
-        total = calculate(simulated_data, generation, occurrences_dict_ca_within, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.within_ca, num_gens, memo)
+        total = calculate(simulated_data, generation, occurrences_dict_father_mother, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.father_mother, num_gens, memo, total_ind)
+        total = calculate(simulated_data, generation, occurrences_dict_ca_father, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.father_ca, num_gens, memo, total_ind)
+        total = calculate(simulated_data, generation, occurrences_dict_ca_mother, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.mother_ca, num_gens, memo, total_ind)
+        total = calculate(simulated_data, generation, occurrences_dict_ca_within, ngen, ancestors_by_generation_father, ancestors_by_generation_mother, total, ancestors_by_generation_ca, PoolType.within_ca, num_gens, memo, total_ind)
 
     memo[(generation, father_index, mother_index)] = total    
     return total
@@ -288,7 +289,7 @@ if __name__ == "__main__":
     parser.add_argument("rep",type=str, help="replica number")
     parser.add_argument("migration_rate", type = float)
     parser.add_argument("--max_child_mean", type=int, default=7, help="Maximum mean number of children per couple (default: 7)")
-    parser.add_argument("--mean_child_per_couple", type=int, default=2, help="Mean number of children per couple (default: 2)")
+    parser.add_argument("--mean_children_per_couple", type=int, default=2, help="Mean number of children per couple (default: 2)")
     args = parser.parse_args()
 
     main(args)
