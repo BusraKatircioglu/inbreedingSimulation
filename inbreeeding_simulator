@@ -271,7 +271,7 @@ def main(args):
             fped = calculateInbreedingCoefficient(simulated_data,num_gens, i, num_gens, memo)
             Fped_list.append(fped)
 
-        with open('female{}_male{}_gen{}_{}.txt'.format(female, male, num_gens, rep), 'w') as f:
+        with open('female{}_male{}_gen{}_m{}_r{}.txt'.format(female, male, num_gens, migration_rate, rep), 'w') as f:
             for item in Fped_list:
                 f.write(str(item) + '\n')
 
